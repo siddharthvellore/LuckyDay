@@ -1,7 +1,5 @@
 # LuckyDay DevOps Challenge
 
-Foobar is a Python library for dealing with word pluralization.
-
 ## AWS Configuration
 
 a) Create an IAM role for CloudFormation that has permissions to create the following resources.
