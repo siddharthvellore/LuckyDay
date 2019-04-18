@@ -1,0 +1,311 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lucky Day Developer Operations Challenge.",
+  
+  "Parameters": {
+    "KeyName": {
+	  "Type": "AWS::EC2::KeyPair::KeyName",
+	  "Description": "Name of existing keypair."
+	}
+  },
+  
+  "Mappings": {
+    "AWSRegionToAMI": {
+      "us-west-1": {"AMI": "ami-0ec6517f6edbf8044"},
+      "us-west-2": {"AMI": "ami-01e24be29428c15b2"}
+	}
+  },
+  
+  "Resources": {
+    "VPC": {
+	  "Type": "AWS::EC2::VPC",
+	  "Properties": {
+	    "CidrBlock": "10.10.0.0/16",
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "vpc"]]}} ]
+	  }
+	},
+	"PublicSubnetAz1": {
+	  "Type": "AWS::EC2::Subnet",
+	  "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "MapPublicIpOnLaunch": "true",
+	    "AvailabilityZone": {"Fn::Join": ["", [{"Ref": "AWS::Region"}, "a"]]},
+		"CidrBlock": "10.10.1.0/24",
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pub-sub-az1"]]}} ]
+	  }
+	},
+	
+	"PublicSubnetAz2": {
+	  "Type": "AWS::EC2::Subnet",
+	  "Properties": {
+	    "VpcId": {"Ref": "VPC"},
+        "MapPublicIpOnLaunch": "true",
+        "AvailabilityZone": {"Fn::Join": ["", [{"Ref": "AWS::Region"}, "b"]]},
+		"CidrBlock": "10.10.2.0/24",
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pub-sub-az2"]]}} ]
+	  }
+	},
+	
+	"InternetGateway": {
+	  "Type": "AWS::EC2::InternetGateway",
+	  "Properties": {
+	    "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "igw"]]}} ]
+	  }
+	},
+	
+	"VPCGatewayAttachment": {
+	  "Type": "AWS::EC2::VPCGatewayAttachment",
+	  "Properties": {
+	    "VpcId": {"Ref": "VPC"},
+		"InternetGatewayId": {"Ref": "InternetGateway"}
+	  }
+	},
+	
+	"RouteTable": {
+	  "Type": "AWS::EC2::RouteTable",
+	  "Properties": {
+	    "VpcId": {"Ref": "VPC"},
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "pub-rt"]]}} ]
+	  }
+	},
+	
+	"RouteRule": {
+	  "Type": "AWS::EC2::Route",
+	  "DependsOn": "VPCGatewayAttachment",
+	  "Properties": {
+	    "RouteTableId": {"Ref": "RouteTable"},
+		"DestinationCidrBlock": "0.0.0.0/0",
+		"GatewayId": {"Ref": "InternetGateway"}
+	  }
+	},
+	
+	"SubnetRouteTableAssociationAz1": {
+	  "Type": "AWS::EC2::SubnetRouteTableAssociation",
+	  "Properties": {
+	    "SubnetId": {"Ref": "PublicSubnetAz1"},
+		"RouteTableId": {"Ref": "RouteTable"}
+	  }
+    },
+    
+    "SubnetRouteTableAssociationAz2": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {"Ref": "PublicSubnetAz2"},
+          "RouteTableId": {"Ref": "RouteTable"}
+        }
+      },
+	
+	"EC2SecurityGroup": {
+	  "Type": "AWS::EC2::SecurityGroup",
+	  "Properties": {
+	    "GroupDescription": "SG for EC2 instances",
+		"VpcId": {"Ref": "VPC"},
+		"SecurityGroupIngress": [{
+		  "IpProtocol": "tcp",
+		  "FromPort": "80",
+		  "ToPort": "80",
+		  "CidrIp": "10.10.0.0/16"
+		}],
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "ec2-sg"]]}} ]
+	  }
+	},
+	
+	"ALBSecurityGroup": {
+	  "Type": "AWS::EC2::SecurityGroup",
+	  "Properties": {
+	    "GroupDescription": "SG for ALB",
+		"VpcId": {"Ref": "VPC"},
+		"SecurityGroupIngress": [{
+		  "IpProtocol": "tcp",
+		  "FromPort": "80",
+		  "ToPort": "80",
+		  "CidrIp": "0.0.0.0/0"
+		}],
+		"Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "alb-sg"]]}} ]
+	  }
+	},
+	
+	"ALBListener1" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+        "Properties" : {
+          "DefaultActions" : [{
+            "Type" : "forward",
+            "TargetGroupArn" : { "Ref" : "ALBTargetGroup1" }
+          }],
+          "LoadBalancerArn" : { "Ref" : "ApplicationLoadBalancer1" },
+          "Port" : "80",
+          "Protocol" : "HTTP"
+        }
+      },
+
+      "ALBListener2" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+        "Properties" : {
+          "DefaultActions" : [{
+            "Type" : "forward",
+            "TargetGroupArn" : { "Ref" : "ALBTargetGroup2" }
+          }],
+          "LoadBalancerArn" : { "Ref" : "ApplicationLoadBalancer2" },
+          "Port" : "80",
+          "Protocol" : "HTTP"
+        }
+      },
+      
+      "ApplicationLoadBalancer1" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+        "Properties" : {
+          "Name": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "alb-1"]]},
+          "Scheme" : "internet-facing",
+          "Subnets" : [ {"Ref" : "PublicSubnetAz1"}, {"Ref" : "PublicSubnetAz2"}],
+          "SecurityGroups" : [{"Ref": "ALBSecurityGroup"}],
+          "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "alb-1"]]}} ]
+        }
+      },
+
+      "ApplicationLoadBalancer2" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+        "Properties" : {
+          "Name": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "alb-2"]]},
+          "Scheme" : "internet-facing",
+          "Subnets" : [ {"Ref" : "PublicSubnetAz1"}, {"Ref" : "PublicSubnetAz2"}],
+          "SecurityGroups" : [{"Ref": "ALBSecurityGroup"}],
+          "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "alb-2"]]}} ]
+        }
+      },
+
+      "ALBTargetGroup1" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+        "Properties" : {
+          "HealthCheckIntervalSeconds" : "60",
+          "UnhealthyThresholdCount" : "10",
+          "HealthCheckPath" : "/index.html",
+          "Name" : {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "tg-grp-1"]]},
+          "Port" : "80",
+          "Protocol" : "HTTP",
+          "VpcId" : { "Ref": "VPC" },
+          "TargetGroupAttributes" : [
+            {
+              "Key" : "deregistration_delay.timeout_seconds",
+              "Value" : "60"
+            }
+          ],
+          "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "tg-grp-1"]]}} ]
+        }
+    },
+
+    "ALBTargetGroup2" : {
+        "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+        "Properties" : {
+          "HealthCheckIntervalSeconds" : "60",
+          "UnhealthyThresholdCount" : "10",
+          "HealthCheckPath" : "/index.html",
+          "Name" : {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "tg-grp-2"]]},
+          "Port" : "80",
+          "Protocol" : "HTTP",
+          "VpcId" : { "Ref": "VPC" },
+          "TargetGroupAttributes" : [
+            {
+              "Key" : "deregistration_delay.timeout_seconds",
+              "Value" : "60"
+            }
+          ],
+          "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "tg-grp-2"]]}} ]
+        }
+    },
+
+    "LaunchConfiguration1" : {
+        "Type" : "AWS::AutoScaling::LaunchConfiguration",
+        "Properties" : {
+           "LaunchConfigurationName" : {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "lc-1"]]},
+           "KeyName" : { "Ref" : "KeyName" },
+           "ImageId": {"Fn::FindInMap": ["AWSRegionToAMI", {"Ref": "AWS::Region"}, "AMI"]},
+           "UserData": {"Fn::Base64": {"Fn::Join": ["\n", [
+                "#!/bin/bash",
+                "yum install httpd -y",
+                "echo 'Health Checker: OK' > /var/www/html/index.html",
+                "service httpd start"
+            ]]}},
+           "SecurityGroups" : [ { "Ref" : "EC2SecurityGroup" } ],
+           "InstanceType" : "t3.nano"
+        }
+     },
+
+     "LaunchConfiguration2" : {
+        "Type" : "AWS::AutoScaling::LaunchConfiguration",
+        "Properties" : {
+           "LaunchConfigurationName" : {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "lc-2"]]},
+           "KeyName" : { "Ref" : "KeyName" },
+           "ImageId": {"Fn::FindInMap": ["AWSRegionToAMI", {"Ref": "AWS::Region"}, "AMI"]},
+           "UserData": {"Fn::Base64": {"Fn::Join": ["\n", [
+                "#!/bin/bash",
+                "yum install httpd -y",
+                "echo 'Another Health Checker: OK' > /var/www/html/index.html",
+                "service httpd start"
+            ]]}},
+           "SecurityGroups" : [ { "Ref" : "EC2SecurityGroup" } ],
+           "InstanceType" : "t3.nano"
+        }
+     },
+
+    "AutoScalingGroup1" : {
+        "Type" : "AWS::AutoScaling::AutoScalingGroup",
+        "DependsOn": "VPCGatewayAttachment",
+        "Properties" : {
+           "AutoScalingGroupName": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "asg-1"]]},
+           "AvailabilityZones" : [{"Fn::Join": ["", [{"Ref": "AWS::Region"}, "a"]]},{"Fn::Join": ["", [{"Ref": "AWS::Region"}, "b"]]}],
+           "LaunchConfigurationName" : { "Ref" : "LaunchConfiguration1" },
+           "MinSize" : "2",
+           "MaxSize" : "5",
+           "TargetGroupARNs": [{"Ref": "ALBTargetGroup1"}],
+           "VPCZoneIdentifier": [ {"Ref" : "PublicSubnetAz1"}, {"Ref" : "PublicSubnetAz2"}],
+           "MetricsCollection": [
+              {
+                 "Granularity": "1Minute",
+                 "Metrics": [
+                    "GroupMinSize",
+                    "GroupMaxSize"
+                 ]
+              }
+           ],
+           "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "asg-1"]]}, "PropagateAtLaunch" : "true"} ]
+        }
+    },
+
+    "AutoScalingGroup2" : {
+        "Type" : "AWS::AutoScaling::AutoScalingGroup",
+        "DependsOn": "VPCGatewayAttachment",
+        "Properties" : {
+           "AutoScalingGroupName": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "asg-2"]]},
+           "AvailabilityZones" : [{"Fn::Join": ["", [{"Ref": "AWS::Region"}, "a"]]},{"Fn::Join": ["", [{"Ref": "AWS::Region"}, "b"]]}],
+           "LaunchConfigurationName" : { "Ref" : "LaunchConfiguration2" },
+           "MinSize" : "2",
+           "MaxSize" : "5",
+           "TargetGroupARNs": [{"Ref": "ALBTargetGroup2"}],
+           "VPCZoneIdentifier": [ {"Ref" : "PublicSubnetAz1"}, {"Ref" : "PublicSubnetAz2"}],
+           "MetricsCollection": [
+              {
+                 "Granularity": "1Minute",
+                 "Metrics": [
+                    "GroupMinSize",
+                    "GroupMaxSize"
+                 ]
+              }
+           ],
+           "Tags": [ {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "AWS::StackName"}, "asg-2"]]}, "PropagateAtLaunch" : "true"} ]
+        }
+    }
+
+  },
+  
+  "Outputs": {
+    "ElbDns1": {
+	  "Description": "DNS name of ALB-1",
+	  "Value": {"Fn::Join": ["", ["http://", {"Fn::GetAtt": ["ApplicationLoadBalancer1", "DNSName"]}]]}
+    },
+
+    "ElbDns2": {
+        "Description": "DNS name of ALB-2",
+        "Value": {"Fn::Join": ["", ["http://", {"Fn::GetAtt": ["ApplicationLoadBalancer2", "DNSName"]}]]}
+      }
+  }
+}
