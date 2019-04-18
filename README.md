@@ -29,3 +29,5 @@ d) The stack should be created without any errors and can be seen in the image b
 
 
 ![alt text](https://s3-us-west-2.amazonaws.com/luckyday-sid/Screen+Shot+2019-04-18+at+11.10.25+AM.png)
+
+#### Please hit on the above images for a clear visual
